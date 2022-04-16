@@ -13,6 +13,8 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <hijack.h>
+#include <linux/empeg.h>
 
 #define RAW_W 128
 #define RAW_H 32
@@ -26,10 +28,11 @@ static unsigned int client_addr_len;
 
 static char rawBmp[128 * 32 / 8];
 static char *raw = rawBmp;
-static int screen = open("/proc/empeg_screen.raw", O_RDONLY);
+static int screen;
 
+static int kbd;
 static unsigned long buttons[2] = { 2, 0 };
-static int kbd = open("/dev/display", O_WRONLY);
+static int;
 
 
 int main( int argc, char *argv[]) {
@@ -39,6 +42,9 @@ int main( int argc, char *argv[]) {
 
   int pid = getpid();
   sprintf("empegd started, pid=%d\n", pid);
+
+  screen = open("/proc/empeg_screen.raw", O_RDONLY);
+  kbd = open("/dev/display", O_WRONLY);
 
   int port = atoi(argv[1]);
   char input[512];
@@ -50,7 +56,7 @@ int main( int argc, char *argv[]) {
     perror("Error: socket failed");
   }
 
-  bzero((char*) &server_addr, sizeof(server_address));
+  bzero((char*) &server_addr, sizeof(server_addr));
   server_addr.sin_family=AF_INET;
   server_addr.sin_addr.s_addr=htonl(INADDR_ANY);
   server_addr.sin_port=htons(port);
