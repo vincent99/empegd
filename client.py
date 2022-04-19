@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import socket
-from PIL import ImageFile
+#from PIL import ImageFile
 import curses
 
 client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)  # UDP
@@ -13,17 +13,22 @@ server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 server.settimeout(0.2)
 
-def px(num):
-  if num == 255:
-    return 'X'
-  elif num == 170:
-    return 'X'
-  elif num == 85:
-    return 'x'
-  elif num == 0:
-    return ' '
+def px(val, high):
+  if high:
+    num = (val & 0b11110000) >> 4
   else:
-    return '?'
+    num = val & 0b00001111
+
+  if num == 15:
+    return '█'
+  elif num > 2:
+    return '▓'
+  elif num == 2:
+    return '▒'
+  elif num == 1:
+    return '░'
+  else:
+    return ' '
 
 client.bind(("", 1024))
 
@@ -40,19 +45,19 @@ def main(scr):
     scr.keypad(True)
     scr.nodelay(True)
 
-    data, addr = client.recvfrom(4096)
-    parser = ImageFile.Parser()
-    parser.feed(data)
-    picture = parser.close()
+    data, addr = client.recvfrom(2048)
 
     print(chr(27)+'[2j')
     print('\033c')
     print('\x1bc')
 
-    data = list(picture.getdata(0))
     for y in range(32):
-      line = data[128*y:(128*(y+1))]
-      str = ''.join(map(px, line))
+      line = [' ']*128
+      for x in range(64):
+        line[(2*x)  ] = px(data[64*y + x], False)
+        line[(2*x)+1] = px(data[64*y + x], True)
+
+      str = ''.join(line)
       scr.addstr(y, 0, str)
 
     scr.refresh()

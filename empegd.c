@@ -17,16 +17,23 @@
 #include "hijack.h"
 #include "empeg.h"
 
-#define PNG_SIZE 1152
 #define INPUT_BUF 512
 #define PORT 1024
+
+#define RAW_W        128
+#define RAW_H        32
+#define RAW_PPB      2
+#define RAW_ROWBYTES RAW_W/RAW_PPB
+#define RAW_SIZE     RAW_ROWBYTES * RAW_H
+#define OUT_PPB      4
+#define OUT_SIZE     RAW_W/OUT_PPB * RAW_H
 
 static volatile int keepRunning = 1;
 static int sock;
 static struct sockaddr_in bcast_addr, server_addr, client_addr;
 static unsigned int client_addr_len;
 
-static char rawBmp[PNG_SIZE];
+static char rawBmp[RAW_SIZE];
 static char *raw = rawBmp;
 static int screen;
 
@@ -37,9 +44,9 @@ void frame() {
   int res;
 
   lseek(screen, 0, SEEK_SET);
-  read(screen, raw, PNG_SIZE);
+  read(screen, raw, RAW_SIZE);
+  res = sendto(sock, raw, RAW_SIZE, 0, (struct sockaddr*) &bcast_addr, sizeof(bcast_addr));
 
-  res = sendto(sock, raw, PNG_SIZE, 0, (struct sockaddr*) &bcast_addr, sizeof(bcast_addr));
   if ( res == -1 ) {
     perror("Error: sendto call failed");
   }
@@ -133,7 +140,7 @@ void key(char input) {
       break;
 
     default:
-      printf("Unknown key\n");
+      //printf("Unknown key\n");
       valid = 0;
   }
 
@@ -169,7 +176,7 @@ int main( int argc, char *argv[]) {
   pid = getpid();
   printf("empegd started, pid=%d\n", pid);
 
-  screen = open("/proc/empeg_screen.png", O_RDONLY);
+  screen = open("/proc/empeg_screen.raw", O_RDONLY);
   kbd = open("/dev/display", O_WRONLY);
 
   sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
