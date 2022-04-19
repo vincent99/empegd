@@ -15,15 +15,15 @@ server.settimeout(0.2)
 
 def px(num):
   if num == 255:
-    return '█'
+    return 'X'
   elif num == 170:
-    return '▓'
+    return 'X'
   elif num == 85:
-    return '░'
+    return 'x'
   elif num == 0:
     return ' '
   else:
-    return str(num)
+    return '?'
 
 client.bind(("", 1024))
 
@@ -61,21 +61,23 @@ def main(scr):
       print("Key", key)
 
     if key == curses.KEY_UP:
-      write('u')
+      write('Uu')
     elif key == curses.KEY_DOWN:
-      write('d')
+      write('Dd')
     elif key == curses.KEY_LEFT:
-      write('l')
+      write('Ll')
     elif key == curses.KEY_RIGHT:
-      write('r')
+      write('Rr')
     elif key == ord(',') or key == ord('-'):
       write('-')
     elif key == ord('.') or key == ord('='):
       write('+')
     elif key == 10:
-      write('k')
+      write('Kk')
     elif key == ord('q'):
       write('q')
+    elif key >= ord('A') and key <= ord('z'):
+      write(chr(key))
 
 
 curses.wrapper(main)
