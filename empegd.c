@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,17 +14,21 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include <hijack.h>
-#include <linux/empeg.h>
+#include "hijack.h"
+#include "empeg.h"
 
 #define RAW_W 128
 #define RAW_H 32
 #define RAW_PPB 2
 #define RAW_ROWBYTES RAW_W/RAW_PPB
 #define RAW_SIZE RAW_ROWBYTES * RAW_H
+#define PNG_SIZE 1152
+
+#define INPUT_BUF 512
+#define PORT 1024
 
 static int sock;
-static struct sockaddr_in server_addr, client_addr;
+static struct sockaddr_in bcast_addr, server_addr, client_addr;
 static unsigned int client_addr_len;
 
 static char rawBmp[128 * 32 / 8];
@@ -32,71 +37,14 @@ static int screen;
 
 static int kbd;
 static unsigned long buttons[2] = { 2, 0 };
-static int;
-
-
-int main( int argc, char *argv[]) {
-  if ( fork() != 0 ) {
-    return 0;
-  }
-
-  int pid = getpid();
-  sprintf("empegd started, pid=%d\n", pid);
-
-  screen = open("/proc/empeg_screen.raw", O_RDONLY);
-  kbd = open("/dev/display", O_WRONLY);
-
-  int port = atoi(argv[1]);
-  char input[512];
-  int res;
-
-  /*Create socket */
-  sock=socket(AF_INET, SOCK_DGRAM, 0);
-  if(sock == -1) {
-    perror("Error: socket failed");
-  }
-
-  bzero((char*) &server_addr, sizeof(server_addr));
-  server_addr.sin_family=AF_INET;
-  server_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-  server_addr.sin_port=htons(port);
-
-  /*Bind server socket and listen for incoming clients*/
-  res = bind(sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr));
-  if(res == -1)
-      perror("Error: bind call failed");
-
-  sprintf("empegd listening on port=%d\n", port);
-
-   while ( 1 ) {
-    client_addr_len = sizeof(client_addr);
-    res = recvfrom(sock, input, strlen(input)+1, 0, (struct sockaddr*) &client_addr, &client_addr_len);
-    if ( res == -1 ) {
-        perror("Error: recvfrom call failed");
-    }
-
-    printf("SERVER: read %d bytes from %s: %s\n", res, inet_ntoa(client_addr.sin_addr), input);
-
-    if ( input[0] == 'q' || input[0] == 'Q' ) {
-      break;
-    } else if ( input[0] == 'f' || input[0] == 'F' ) {
-      frame();
-    } else {
-      key(input[0]);
-    }
-  }
-
-  res = close(sock);
-  if(res == -1) {
-    perror("Error: bind call failed");
-  }
-}
 
 void frame() {
-  lseek(screen, 0, SEEK_SET);
-  read(screen, raw, RAW_SIZE);
+  int res;
 
-  int res = sendto(sock, raw, RAW_SIZE, 0, (struct sockaddr*) &client_addr, sizeof(client_addr));
+  lseek(screen, 0, SEEK_SET);
+  read(screen, raw, PNG_SIZE);
+
+  res = sendto(sock, raw, PNG_SIZE, 0, (struct sockaddr*) &bcast_addr, sizeof(bcast_addr));
   if ( res == -1 ) {
     perror("Error: sendto call failed");
   }
@@ -197,4 +145,87 @@ void key(char input) {
   if ( valid ) {
     ioctl(kbd, EMPEG_HIJACK_INJECTBUTTONS, &buttons);
   }
+}
+
+int main( int argc, char *argv[]) {
+  int pid, i;
+  char input[INPUT_BUF];
+  int res;
+
+  client_addr_len = sizeof(client_addr);
+
+//  if ( fork() != 0 ) {
+//    return 0;
+//  }
+//
+//  pid = getpid();
+//  printf("empegd started, pid=%d\n", pid);
+
+  screen = open("/proc/empeg_screen.png", O_RDONLY);
+  kbd = open("/dev/display", O_WRONLY);
+
+  sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if ( sock == -1 ) {
+    perror("Error: socket failed");
+    exit(1);
+  }
+
+  int tmp = 1;
+  res = setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &tmp, sizeof(tmp));
+  if ( res ) {
+    perror("Error: enabling broadcast");
+    close(sock);
+    exit(1);
+  }
+
+  tmp = 8192;
+  res = setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &tmp, sizeof(tmp));
+  if ( res ) {
+    perror("Error: configuring buffer");
+    close(sock);
+    exit(1);
+  }
+
+  memset(&bcast_addr, 0, sizeof(bcast_addr));
+  bcast_addr.sin_family = AF_INET;
+  inet_pton(AF_INET, "255.255.255.255", &bcast_addr.sin_addr);
+  bcast_addr.sin_port = htons(PORT);
+
+  memset(&server_addr, 0, sizeof(server_addr));
+  server_addr.sin_family = AF_INET;
+  inet_pton(AF_INET, "0.0.0.0", &server_addr.sin_addr);
+  server_addr.sin_port = htons(PORT+1);
+
+  res = bind(sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr));
+  if(res == -1) {
+    perror("Error: bind failed");
+  }
+
+  fcntl(sock, F_SETFL, O_NONBLOCK);
+
+  printf("empegd listening on port=%d\n", PORT);
+
+   while ( 1 ) {
+    frame();
+
+    res = recvfrom(sock, input, INPUT_BUF, 0, (struct sockaddr*) &client_addr, &client_addr_len);
+    if ( res > 0 ) {
+      for ( i = 0 ; i < res ; i++ ) {
+        if ( input[i] == 'q' || input[i] == 'Q' ) {
+          break;
+        } else {
+          key(input[i]);
+        }
+      }
+    }
+
+    sleep(1);
+  }
+
+  res = close(sock);
+  if(res == -1) {
+    perror("Error: bind call failed");
+  }
+
+  return 0;
 }
